@@ -74,13 +74,19 @@ tasks in this order:
 7. **Render the production `.env` file** from `templates/env.j2` (below)
    into `/opt/snakegame/.env` using the `template` module, with real
    secrets passed in as Ansible variables (never hardcode them in the
-   playbook or template — see step 7 below).
-8. **Rebuild the frontend image with the real API URL**: run
-   `docker compose build --build-arg VITE_API_BASE_URL=http://<public_ip>:8000 frontend`
-   via the `command` or `shell` module inside `/opt/snakegame` (swap in your
-   real domain once you have one, and https once TLS is set up).
-9. **Bring the stack up**:
-   `docker compose up -d` (also via `command`/`shell`, `chdir: /opt/snakegame`).
+   playbook or template — see step 7 below). This template also sets
+   `FRONTEND_PORT=80`, so `docker-compose.yml`'s
+   `"${FRONTEND_PORT:-3000}:80"` mapping publishes the frontend on the
+   standard HTTP port instead of the local-dev default of 3000 — the app
+   ends up reachable at just `http://<public_ip>`, no port needed. The
+   frontend's nginx (see `frontend/nginx.conf`) proxies `/api/*` to the
+   backend container internally, so the backend itself never needs a public
+   port at all.
+8. **Bring the stack up**:
+   `docker compose up -d --build` (via `command`/`shell`,
+   `chdir: /opt/snakegame`) — no per-deployment build-args needed, since the
+   frontend always calls the relative `/api` path baked into
+   `docker-compose.yml` regardless of environment.
 
 ## 6. `templates/env.j2`
 
@@ -91,6 +97,7 @@ POSTGRES_USER=snake
 POSTGRES_PASSWORD={{ postgres_password }}
 POSTGRES_DB=snakegame
 JWT_SECRET_KEY={{ jwt_secret_key }}
+FRONTEND_PORT=80
 ```
 
 ## 7. Keep secrets out of the playbook
@@ -120,11 +127,11 @@ ansible-playbook playbook.yml -e @secrets.yml
 ## 9. Verify
 
 ```bash
-curl http://<public_ip>:8000/health
+curl http://<public_ip>/api/health
 # {"status":"ok"}
 ```
 
-Then visit `http://<public_ip>:3000` in a browser.
+Then visit `http://<public_ip>` in a browser — no port needed.
 
 ## 10. Re-running / redeploying
 
@@ -160,11 +167,11 @@ Then re-run the playbook with the new password from your local machine.
 
 ## Notes
 
-- This puts the app straight on ports 3000/8000 for simplicity, matching
-  local dev. For a real deployment, add an nginx (or Caddy) reverse proxy on
-  the host in front of both, terminate TLS there (e.g. with
-  [Certbot](https://certbot.eff.org/)), and only expose 80/443 — that's a
-  natural next addition to this playbook once the basic flow works.
+- The app is served entirely on port 80 (frontend's nginx, proxying `/api/*`
+  to the backend container) — no separate ports to expose or remember. The
+  next natural step beyond this is TLS: put a real domain in front of the
+  server and terminate HTTPS with [Certbot](https://certbot.eff.org/) or
+  similar, then also listen on 443.
 - If the repo is private, set up a
   [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
   on the server rather than using a personal SSH key.

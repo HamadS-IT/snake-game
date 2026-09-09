@@ -56,8 +56,14 @@ cp .env.example .env   # fill in POSTGRES_PASSWORD and JWT_SECRET_KEY
 docker compose up --build
 ```
 
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000 (interactive docs at `/docs`)
+- Frontend: http://localhost:3000 (also proxies API calls at `/api/*` to the
+  backend, so the frontend never needs to know the backend's host/port)
+- Backend API: http://localhost:8000 directly (interactive docs at `/docs`)
+
+In production (see [`devops/`](devops/README.md)), the frontend's nginx
+serves everything on port 80 and proxies `/api/*` to the backend
+internally — the app is reachable at just `http://<server-ip>`, no port or
+separate backend host needed.
 
 ## Running without Docker
 
@@ -104,7 +110,9 @@ npm run dev
 
 ## API overview
 
-All endpoints are under the backend root (default `http://localhost:8000`):
+All endpoints are under the backend root when hitting it directly (default
+`http://localhost:8000`), or under `/api` when going through the frontend's
+nginx proxy (e.g. `/api/auth/login`) — both reach the same routes:
 
 | Method | Path                  | Auth | Description                          |
 | ------ | --------------------- | ---- | ------------------------------------- |

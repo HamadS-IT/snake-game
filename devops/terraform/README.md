@@ -1,9 +1,11 @@
 # Terraform: Provision an EC2 Instance
 
 Goal: end up with one running Ubuntu EC2 instance, reachable over SSH and on
-ports 80/443 (and temporarily 8000/3000 while testing), that Ansible can then
-configure. This guide has you write the Terraform yourself — nothing here is
-pre-built — so you understand every resource it creates.
+ports 80/443, that Ansible can then configure. The whole app ends up served
+on port 80 (nginx proxies API calls to the backend internally — see the
+Ansible guide), so no other ports need to be opened. This guide has you
+write the Terraform yourself — nothing here is pre-built — so you
+understand every resource it creates.
 
 ## 1. Prerequisites
 
@@ -53,10 +55,11 @@ Use `snakegame-key` as the `key_name` variable value.
 ## 5. `main.tf` — resources to define
 
 1. **`provider "aws"`** — region from `var.aws_region`.
-2. **A security group** allowing inbound: TCP 22 (SSH), TCP 80 and 443
-   (public web traffic), and — only while you're first testing before
-   nginx/TLS is in front of everything — TCP 3000 and 8000 from
-   `var.ssh_allowed_cidr` only. Allow all outbound traffic.
+2. **A security group** allowing inbound TCP 22 (SSH), 80 (HTTP), and 443
+   (HTTPS, for once TLS is set up) — nothing else. The app ends up served
+   entirely on port 80 (nginx proxies API calls to the backend internally —
+   see the Ansible guide), so the backend container never needs its own
+   public port. Allow all outbound traffic.
 
    For SSH, you have two options: restrict `cidr_blocks` to
    `[var.ssh_allowed_cidr]` (more locked-down, but only works from that one
@@ -65,8 +68,7 @@ Use `snakegame-key` as the `key_name` variable value.
    guide later, use `0.0.0.0/0`** — GitHub Actions' hosted runners connect
    from GitHub's own dynamic IP ranges, not your IP, so a
    `var.ssh_allowed_cidr`-restricted rule will block CI/CD deploys with a
-   `dial tcp ...:22: i/o timeout` error. Ports 3000/8000 can stay restricted
-   to your IP either way — only SSH needs to be reachable by CI.
+   `dial tcp ...:22: i/o timeout` error.
 3. **A `data "aws_ami"` lookup** for the latest Ubuntu 22.04 LTS AMI (owner
    `099720109477`, name pattern
    `ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*`), so you're not

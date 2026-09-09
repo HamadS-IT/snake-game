@@ -103,7 +103,7 @@ Never put these values directly in `ci.yml` — reference them as
 Push a trivial commit to `main` (or open a PR first to check the test/build
 jobs alone) and watch it run under the repo's **Actions** tab. Confirm the
 deploy job actually updated the server by checking
-`curl http://<host>:8000/health` right after the workflow finishes, or by
+`curl http://<host>/api/health` right after the workflow finishes, or by
 watching `docker compose ps` on the server for a new container start time.
 
 ## Troubleshooting
