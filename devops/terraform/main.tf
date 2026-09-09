@@ -30,14 +30,18 @@ data "aws_ami" "ubuntu" {
 
 resource "aws_security_group" "snakegame" {
   name        = "snakegame-sg"
-  description = "Snake game server: SSH from admin IP, HTTP/HTTPS public, app ports for initial testing"
+  description = "Snake game server: SSH (key-auth only), HTTP/HTTPS public, app ports for initial testing"
 
+  # Open to the internet rather than just var.ssh_allowed_cidr: GitHub Actions'
+  # hosted runners connect from GitHub's own dynamic IP ranges (not your IP),
+  # so CI/CD deploy needs SSH reachable from anywhere. Security here relies on
+  # key-only auth (no password auth) rather than IP allowlisting.
   ingress {
-    description = "SSH from admin IP only"
+    description = "SSH (key auth only)"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
