@@ -85,14 +85,6 @@
         group: ubuntu
         mode: "0600"
 
-    - name: Rebuild the frontend image with the real API URL
-      ansible.builtin.command:
-        cmd: >
-          docker compose build
-          --build-arg VITE_API_BASE_URL=http://{{ inventory_hostname }}:8000
-          frontend
-        chdir: "{{ app_dir }}"
-
     - name: Bring the stack up
       ansible.builtin.command:
         cmd: docker compose up -d --build

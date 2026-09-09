@@ -60,23 +60,11 @@ resource "aws_security_group" "snakegame" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Temporary: direct access to the frontend/backend containers while testing,
-  # before a reverse proxy on 80/443 is in front of them (see ansible README).
-  ingress {
-    description = "Frontend (temporary, admin IP only)"
-    from_port   = 3000
-    to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
-  }
-
-  ingress {
-    description = "Backend API (temporary, admin IP only)"
-    from_port   = 8000
-    to_port     = 8000
-    protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
-  }
+  # Ports 3000/8000 are intentionally not opened here: nginx (in the
+  # frontend container) now serves the whole app on 80, proxying /api/* to
+  # the backend container over the internal Docker network — see
+  # frontend/nginx.conf. The backend is never exposed directly to the
+  # internet.
 
   egress {
     from_port   = 0
