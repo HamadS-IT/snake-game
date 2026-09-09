@@ -29,9 +29,13 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE_URL: http://localhost:8000
+        # Relative path: nginx (see frontend/nginx.conf) proxies /api/* to
+        # the backend container internally, so the browser always calls the
+        # same origin it loaded the page from — no host/port to hardcode,
+        # and no CORS involved.
+        VITE_API_BASE_URL: /api
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
 
