@@ -10,9 +10,11 @@ pre-built — so you understand every resource it creates.
 - [Install Terraform](https://developer.hashicorp.com/terraform/install)
   (`terraform -version` to confirm).
 - [Install the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-  and run `aws configure` with an IAM user's access key that has permission
-  to manage EC2 (for a personal project, `AmazonEC2FullAccess` is fine to
-  start with; tighten later).
+  and authenticate with an IAM identity that has permission to manage EC2
+  (for a personal project, `AmazonEC2FullAccess` is fine to start with;
+  tighten later). Either `aws configure` (long-lived access key) or
+  `aws configure sso` + `aws sso login` (IAM Identity Center) work — but if
+  you use SSO, see the credentials note below before running Terraform.
 - An SSH key pair. If you don't have one you're happy to use:
   `ssh-keygen -t ed25519 -f ~/.ssh/snakegame-key` (creates a private +
   `.pub` file).
@@ -51,11 +53,20 @@ Use `snakegame-key` as the `key_name` variable value.
 ## 5. `main.tf` — resources to define
 
 1. **`provider "aws"`** — region from `var.aws_region`.
-2. **A security group** allowing inbound: TCP 22 (SSH) from
-   `var.ssh_allowed_cidr` only, TCP 80 and 443 from `0.0.0.0/0` (public web
-   traffic), and — only while you're first testing before nginx/TLS is in
-   front of everything — TCP 3000 and 8000 from `var.ssh_allowed_cidr`.
-   Allow all outbound traffic.
+2. **A security group** allowing inbound: TCP 22 (SSH), TCP 80 and 443
+   (public web traffic), and — only while you're first testing before
+   nginx/TLS is in front of everything — TCP 3000 and 8000 from
+   `var.ssh_allowed_cidr` only. Allow all outbound traffic.
+
+   For SSH, you have two options: restrict `cidr_blocks` to
+   `[var.ssh_allowed_cidr]` (more locked-down, but only works from that one
+   IP), or open it to `["0.0.0.0/0"]` (works from anywhere, security relies
+   entirely on key-only auth). **If you're planning to set up the CI/CD
+   guide later, use `0.0.0.0/0`** — GitHub Actions' hosted runners connect
+   from GitHub's own dynamic IP ranges, not your IP, so a
+   `var.ssh_allowed_cidr`-restricted rule will block CI/CD deploys with a
+   `dial tcp ...:22: i/o timeout` error. Ports 3000/8000 can stay restricted
+   to your IP either way — only SSH needs to be reachable by CI.
 3. **A `data "aws_ami"` lookup** for the latest Ubuntu 22.04 LTS AMI (owner
    `099720109477`, name pattern
    `ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*`), so you're not
@@ -112,6 +123,32 @@ When you're done experimenting (to stop paying for it):
 ```bash
 terraform destroy
 ```
+
+## Troubleshooting
+
+**`Error: No valid credential sources found` (or an IMDS timeout error)
+during `terraform plan`, even though `aws sts get-caller-identity` works
+fine** — this means the AWS CLI and Terraform are reading credentials from
+different places. It's the classic symptom of using an SSO/named profile:
+the CLI knows which profile to use (from `AWS_PROFILE` in your shell or
+`--profile`), but Terraform, run as a separate process, doesn't. Fix:
+```bash
+cat ~/.aws/config   # find your profile name, e.g. "[profile my-sso]"
+export AWS_PROFILE=my-sso
+terraform plan
+```
+Or add `profile = "my-sso"` to the `provider "aws"` block in `main.tf` to
+make it permanent. Also re-run `aws sso login --profile my-sso` if the
+session has expired (SSO credentials are short-lived).
+
+**Changing the security group later triggers `-/+ destroy and then create
+replacement` instead of a clean update** — AWS treats a security group's
+top-level `description` as immutable; changing that one string (even while
+also changing something else, like an ingress rule) forces Terraform to
+replace the whole security group instead of updating it in place. This
+briefly detaches/reattaches it from the instance. To make an incremental
+change (e.g. loosening an ingress CIDR) without a forced replacement, only
+edit the `ingress`/`egress` blocks and leave `description` untouched.
 
 ## Notes / things to double-check
 

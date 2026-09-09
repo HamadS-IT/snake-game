@@ -11,6 +11,12 @@ being a manual `ssh` + `git pull` + `docker compose up` routine.
   running server and understand what the pipeline will be automating.
 - This repo hosted on GitHub (GitHub Actions is GitHub-native; a different
   host would need an equivalent like GitLab CI).
+- **The security group's SSH rule must allow `0.0.0.0/0`, not just your own
+  IP.** GitHub-hosted runners connect from GitHub's own dynamic IP ranges —
+  if the Terraform security group still restricts port 22 to
+  `var.ssh_allowed_cidr` (your IP), the deploy job will fail with
+  `dial tcp <host>:22: i/o timeout` even though everything else is correct.
+  See the note in `devops/terraform/README.md` step 5.
 
 ## 2. Directory layout to create
 
@@ -99,6 +105,34 @@ jobs alone) and watch it run under the repo's **Actions** tab. Confirm the
 deploy job actually updated the server by checking
 `curl http://<host>:8000/health` right after the workflow finishes, or by
 watching `docker compose ps` on the server for a new container start time.
+
+## Troubleshooting
+
+**`git push` is rejected with `refusing to allow a Personal Access Token to
+create or update workflow ".github/workflows/ci.yml" without \`workflow\`
+scope`** — GitHub requires a PAT to explicitly have the `workflow` scope to
+push changes under `.github/workflows/`, even in your own repo. Fix: edit
+(or regenerate) your token at **GitHub → Settings → Developer settings →
+Personal access tokens** and check the `workflow` scope (classic tokens) or
+set **Workflows: Read and write** (fine-grained tokens), then push again.
+
+**After updating the token, `git push` still doesn't prompt for
+credentials and fails the same way** — a credential helper cached your old
+token and is silently reusing it. Check which one:
+```bash
+git config --get credential.helper
+```
+If it's `store`, the token is cached in plaintext at `~/.git-credentials`:
+```bash
+rm ~/.git-credentials
+git push   # now prompts fresh — enter your username and the NEW token as the password
+```
+(Other helpers — `osxkeychain`, `libsecret`, `manager` — cache it in the OS
+keychain instead; remove the saved `github.com` entry from there similarly.)
+
+**Deploy job fails with `dial tcp <host>:22: i/o timeout`** — see the
+security-group prerequisite above; this is almost always the SSH port being
+restricted to an IP that doesn't include GitHub's runners.
 
 ## Notes
 

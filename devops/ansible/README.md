@@ -60,18 +60,26 @@ tasks in this order:
    `apt: name=docker-ce,docker-ce-cli,containerd.io,docker-compose-plugin`.
 4. **Add the `ubuntu` user to the `docker` group** (so you don't need `sudo`
    for every docker command) — `user: name=ubuntu groups=docker append=yes`.
-5. **Clone or update the repo** into e.g. `/opt/snakegame` using the `git`
-   module (`repo`, `dest`, `version: main`) — this needs the repo to be
-   public, or a deploy key set up for private repos.
-6. **Render the production `.env` file** from `templates/env.j2` (below)
+5. **Create the app directory first, owned by `ubuntu`** — e.g.
+   `file: path=/opt/snakegame state=directory owner=ubuntu group=ubuntu` —
+   **before** cloning. `/opt` itself is root-owned, so if you skip this and
+   go straight to `git clone` as the `ubuntu` user, it fails with
+   `Permission denied` trying to create the work tree dir. Creating the
+   directory as root (the play's default `become` user) and handing
+   ownership to `ubuntu` first fixes it.
+6. **Clone or update the repo** into that directory using the `git` module
+   (`repo`, `dest`, `version: main`, run as `become_user: ubuntu` since it
+   now owns the directory) — this needs the repo to be public, or a deploy
+   key set up for private repos.
+7. **Render the production `.env` file** from `templates/env.j2` (below)
    into `/opt/snakegame/.env` using the `template` module, with real
    secrets passed in as Ansible variables (never hardcode them in the
-   playbook or template — see step 7).
-7. **Rebuild the frontend image with the real API URL**: run
+   playbook or template — see step 7 below).
+8. **Rebuild the frontend image with the real API URL**: run
    `docker compose build --build-arg VITE_API_BASE_URL=http://<public_ip>:8000 frontend`
    via the `command` or `shell` module inside `/opt/snakegame` (swap in your
    real domain once you have one, and https once TLS is set up).
-8. **Bring the stack up**:
+9. **Bring the stack up**:
    `docker compose up -d` (also via `command`/`shell`, `chdir: /opt/snakegame`).
 
 ## 6. `templates/env.j2`
@@ -98,7 +106,9 @@ Don't write real passwords into any committed file. Options, easiest first:
   to encrypt `secrets.yml` so it's safe to commit.
 
 Generate a real random `JWT_SECRET_KEY` rather than reusing the local dev
-value, e.g. `openssl rand -hex 32`.
+value, e.g. `openssl rand -hex 32`. **Generate `postgres_password` the same
+way** (`openssl rand -hex 16`), rather than picking your own password with
+special characters — see the troubleshooting note below for why.
 
 ## 8. Run it
 
@@ -123,6 +133,30 @@ commits, `docker compose build` picks up code changes, and
 `docker compose up -d` restarts only the containers whose images changed.
 Running the whole playbook again after every push is exactly what the
 CI/CD guide automates.
+
+## Troubleshooting
+
+**Backend crashes on startup with something like
+`could not translate host name "!something@postgres" to address`** — your
+`postgres_password` contains a URL-special character (`!`, `@`, `:`, `/`,
+etc.), which corrupts the `postgresql://user:password@host/db` connection
+string the backend builds from it. Typing a password with `!` at an
+interactive shell prompt can also trigger bash's history expansion and
+mangle the value before it even reaches Ansible. Avoid the whole class of
+bug by generating secrets as pure hex (`openssl rand -hex 16`) instead of
+picking your own password.
+
+If you hit this after Postgres already started once with the bad value,
+changing `postgres_password` and re-running the playbook **won't** fix it
+by itself — Postgres only sets its superuser password at first
+initialization (`initdb`), which already happened and persisted to the
+`postgres` Docker volume. You need to wipe that volume and let it
+reinitialize with the new (valid) password:
+```bash
+ssh -i ~/.ssh/snakegame-key ubuntu@<public_ip>
+cd /opt/snakegame && docker compose down -v   # -v also removes the postgres volume
+```
+Then re-run the playbook with the new password from your local machine.
 
 ## Notes
 
